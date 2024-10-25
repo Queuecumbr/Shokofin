@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/ShokoAnime/Shokofin/metadata/banner.png",
         "versions": [
             {
+                "version": "4.2.1.2",
+                "changelog": "`fix`: **Don't attempt to iterate directories in the VFS if it doesn't exist**:\n\nFixes #76",
+                "targetAbi": "10.9.7.0",
+                "sourceUrl": "https://github.com/ShokoAnime/Shokofin/releases/download/v4.2.1-dev.2/shoko_4.2.1.2.zip",
+                "checksum": "00957f8b6ae057d1e611d2791fb0a77d",
+                "timestamp": "2024-10-25T20:30:47Z"
+            },
+            {
                 "version": "4.2.1.1",
                 "changelog": "`fix`: **Don't skip valid metadata update events**:\n\n- Fixed the inverse boolean logic that made it so the plugin would skip all valid metadata update events for enabled providers, and process all invalid metadata update events for disabled providers.",
                 "targetAbi": "10.9.7.0",
@@ -39,14 +47,6 @@
                 "sourceUrl": "https://github.com/ShokoAnime/Shokofin/releases/download/v4.2.0-dev.2/shoko_4.2.0.2.zip",
                 "checksum": "b562487a01b2fb2eebc9bd0049d52b16",
                 "timestamp": "2024-10-15T02:24:00Z"
-            },
-            {
-                "version": "4.2.0.1",
-                "changelog": "`fix`: **Don't clean up VFS if it doesn't exist**.",
-                "targetAbi": "10.9.7.0",
-                "sourceUrl": "https://github.com/ShokoAnime/Shokofin/releases/download/v4.2.0-dev.1/shoko_4.2.0.1.zip",
-                "checksum": "1e13024cef8d6c388f857fb154fecf6f",
-                "timestamp": "2024-10-11T22:26:58Z"
             }
         ]
     }
