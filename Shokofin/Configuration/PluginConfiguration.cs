@@ -569,7 +569,6 @@ public class PluginConfiguration : BasePluginConfiguration
             DescriptionProvider.Shoko,
             DescriptionProvider.AniDB,
             DescriptionProvider.TMDB,
-            DescriptionProvider.TvDB,
         ];
         HideUnverifiedTags = true;
         TagSources = TagSource.ContentIndicators | TagSource.Dynamic | TagSource.DynamicCast | TagSource.DynamicEnding | TagSource.Elements |
@@ -603,7 +602,7 @@ public class PluginConfiguration : BasePluginConfiguration
         VFS_Threads = 4;
         VFS_AddReleaseGroup = false;
         VFS_AddResolution = false;
-        VFS_AttachRoot = false;
+        VFS_AttachRoot = true;
         VFS_Location = VirtualRootLocation.Default;
         VFS_CustomLocation = null;
         VFS_ResolveLinks = false;
