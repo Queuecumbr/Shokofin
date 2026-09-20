@@ -39,6 +39,27 @@ public class UserDataRepositoryService
     }
 #endif
 
+    /// <summary>
+    /// Returns the subset of the given item ids that already exist in Jellyfin's database. Used by
+    /// the migration to avoid writing user data rows whose ItemId has no backing BaseItem yet.
+    /// </summary>
+    public HashSet<Guid> GetExistingItemIds(IEnumerable<Guid> itemIds) {
+#if NET9_0_OR_GREATER
+        var ids = itemIds.Distinct().ToArray();
+        if (ids.Length == 0)
+            return new HashSet<Guid>();
+
+        using var context = _dbContextFactory.CreateDbContext();
+        return context.BaseItems
+            .WhereOneOrMany(ids, e => e.Id)
+            .Select(e => e.Id)
+            .ToHashSet();
+#else
+        // Jellyfin 10.10's UserDatas table has no per-item foreign keys, so every destination is valid.
+        return new HashSet<Guid>();
+#endif
+    }
+
     public UserItemData? GetUserDataByKey(string key, User user) {
 #if NET9_0_OR_GREATER
         using var context = _dbContextFactory.CreateDbContext();
@@ -88,15 +109,22 @@ public class UserDataRepositoryService
 #endif
     }
 
-    public void SaveUserDataForNewKey(string key, UserItemData data, User user, Guid newItemId) {
+    public void SaveUserDataForNewKey(string key, UserItemData data, User user, Guid newItemId, HashSet<Guid> existingItemIds) {
 #if NET9_0_OR_GREATER
         using var context = _dbContextFactory.CreateDbContext();
+
+        // The destination item may not exist yet: migration runs during VFS generation, before
+        // Jellyfin creates the new BaseItem. Writing a row with a dangling ItemId would violate the
+        // UserData.ItemId -> BaseItems.Id foreign key, so route it to the placeholder instead;
+        // Jellyfin's ReattachUserDataAsync moves it onto the item once the item is first refreshed.
+        var routedToPlaceholder = !existingItemIds.Contains(newItemId);
+        var targetItemId = routedToPlaceholder ? PlaceholderId : newItemId;
 
         // If a row already exists for this (ItemId, UserId, CustomDataKey) composite key,
         // update it in place. Otherwise Jellyfin's ReattachUserDataAsync will attempt to
         // move placeholder rows to the same key and hit a UNIQUE CONSTRAINT violation.
         var existing = context.UserData
-            .FirstOrDefault(e => e.ItemId == newItemId && e.UserId == user.Id && e.CustomDataKey == key);
+            .FirstOrDefault(e => e.ItemId == targetItemId && e.UserId == user.Id && e.CustomDataKey == key);
 
         if (existing is not null) {
             existing.Rating = data.Rating;
@@ -122,11 +150,11 @@ public class UserDataRepositoryService
 
             var entry = new UserData {
                 CustomDataKey = key,
-                ItemId = newItemId,
+                ItemId = targetItemId,
                 UserId = user.Id,
                 Item = null!,
                 User = null!,
-                RetentionDate = null,
+                RetentionDate = routedToPlaceholder ? DateTime.UtcNow : null,
                 Rating = data.Rating,
                 PlaybackPositionTicks = data.PlaybackPositionTicks,
                 PlayCount = data.PlayCount,
@@ -166,7 +194,7 @@ public class UserDataRepositoryService
 #if NET9_0_OR_GREATER
         using var context = _dbContextFactory.CreateDbContext();
         context.UserData
-            .Where(e => e.ItemId == oldItemId && e.UserId == user.Id && e.CustomDataKey == key)
+            .Where(e => (e.ItemId == oldItemId || e.ItemId == PlaceholderId) && e.UserId == user.Id && e.CustomDataKey == key)
             .ExecuteDelete();
 #else
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
