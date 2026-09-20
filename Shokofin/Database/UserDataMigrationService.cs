@@ -27,15 +27,22 @@ public class UserDataMigrationService(
         if (pathChangeMap.Count == 0)
             return;
 
+        // Resolve which destination items already exist once, so rows targeting an item Jellyfin
+        // has not created yet can be routed to the placeholder instead of violating the
+        // UserData.ItemId -> BaseItems.Id foreign key.
+        var existingItemIds = _repository.GetExistingItemIds(
+            pathChangeMap.Values.Select(info =>
+                _libraryManager.GetNewItemId(info.NewPath, info.IsMovie ? typeof(Movie) : typeof(Episode))));
+
         var totalCount = pathChangeMap.Count;
         var seriesMigrated = 0;
         var movieMigrated = 0;
         foreach (var (_, info) in pathChangeMap) {
             if (info.IsMovie) {
-                if (MigrateMovie(info))
+                if (MigrateMovie(info, existingItemIds))
                     movieMigrated++;
             }
-            else if (MigrateSeriesEpisode(info)) {
+            else if (MigrateSeriesEpisode(info, existingItemIds)) {
                 seriesMigrated++;
             }
         }
@@ -47,7 +54,7 @@ public class UserDataMigrationService(
             _logger.LogInformation("Migrated user data for {Count} movies (out of {Total} changes)", movieMigrated, totalCount);
     }
 
-    private bool MigrateSeriesEpisode(PathChangeInfo info) {
+    private bool MigrateSeriesEpisode(PathChangeInfo info, HashSet<Guid> existingItemIds) {
         var oldKey = ShokoInternalId.SeriesNamespace + info.ShowId +
             info.Season.ToString("000", CultureInfo.InvariantCulture) +
             info.Episode.ToString("000", CultureInfo.InvariantCulture);
@@ -62,10 +69,13 @@ public class UserDataMigrationService(
         var oldItemId = _libraryManager.GetNewItemId(info.OldPath, typeof(Episode));
         var newItemId = _libraryManager.GetNewItemId(info.NewPath, typeof(Episode));
 
-        return MigratePerUser(oldKey, newKey, oldItemId, newItemId);
+        if (!existingItemIds.Contains(newItemId))
+            _logger.LogDebug("Routing user data migration for episode \"{NewPath}\" to the placeholder because the destination item does not exist yet", info.NewPath);
+
+        return MigratePerUser(oldKey, newKey, oldItemId, newItemId, existingItemIds);
     }
 
-    private bool MigrateMovie(PathChangeInfo info) {
+    private bool MigrateMovie(PathChangeInfo info, HashSet<Guid> existingItemIds) {
         var oldItem = _libraryManager.FindByPath(info.OldPath, false);
         if (oldItem is null)
             return false;
@@ -83,10 +93,13 @@ public class UserDataMigrationService(
         if (string.Equals(oldKey, newKey, StringComparison.Ordinal))
             return false;
 
-        return MigratePerUser(oldKey, newKey, oldItemId, newItemId);
+        if (!existingItemIds.Contains(newItemId))
+            _logger.LogDebug("Routing user data migration for movie \"{NewPath}\" to the placeholder because the destination item does not exist yet", info.NewPath);
+
+        return MigratePerUser(oldKey, newKey, oldItemId, newItemId, existingItemIds);
     }
 
-    private bool MigratePerUser(string oldKey, string newKey, Guid oldItemId, Guid newItemId) {
+    private bool MigratePerUser(string oldKey, string newKey, Guid oldItemId, Guid newItemId, HashSet<Guid> existingItemIds) {
         var anyMigrated = false;
         #if NET9_0_OR_GREATER
         var users = _userManager.GetUsers().ToList();
@@ -101,7 +114,7 @@ public class UserDataMigrationService(
             var newData = new UserItemData { Key = newKey };
             newData.CopyFrom(oldData);
 
-            _repository.SaveUserDataForNewKey(newKey, newData, user, newItemId);
+            _repository.SaveUserDataForNewKey(newKey, newData, user, newItemId, existingItemIds);
             _repository.DeleteUserDataByKey(oldKey, user, oldItemId);
 
             _logger.LogDebug(
